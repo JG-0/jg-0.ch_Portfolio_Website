@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <div id="plot"></div>
+    <script>
+        (async () => {
+            const {fig} = await window.streamlit.getComponentInfo();
+            Plotly.newPlot('plot', fig.data, fig.layout, fig.config);
+
+            document.getElementById('plot').on('plotly_restyle', (event) => {
+                const traceVisibility = event[0].visible;
+
+                if (traceVisibility) {
+                    const allVisible = traceVisibility.every(visibility => visibility !== 'legendonly');
+                    if (!allVisible) {
+                        fig.layout.autosize = false;
+                    } else {
+                        fig.layout.autosize = true;
+                    }
+                    Plotly.update('plot', fig.data, fig.layout, fig.config);
+                }
+            });
+
+            window.streamlit.setComponentReady();
+        })();
+    </script>
+</body>
+</html>
