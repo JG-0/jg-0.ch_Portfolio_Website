@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acf-pacf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: acf-pacf
+  template:
+    metadata:
+      labels:
+        app: acf-pacf
+    spec:
+      containers:
+      - name: acf-pacf
+        image: jg-0/acf-pacf:latest
+        ports:
+        - containerPort: 8501
+        env:
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-docker-registry
+              key: github_token
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acf-pacf
+spec:
+  selector:
+    app: acf-pacf
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8501
+  type: LoadBalancer
