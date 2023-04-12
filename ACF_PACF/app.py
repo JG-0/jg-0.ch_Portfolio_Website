@@ -1,21 +1,22 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
+import plotly.express as px
+import matplotlib.colors as mcolors
 import streamlit as st
 from statsmodels.tsa.stattools import acf, pacf
-import colorsys
 # from custom_plotly_component import custom_plotly_chart   # I wanted to make it to listen and turn off autoresize if a user disabled a line, but that'll have to wait
 
 
+
 # Define constants
-PLOTLY_COLORS = [
-    (31, 119, 180), #   "blue",
-    (44, 160, 44), #   "green",
-    (214, 39, 40), #   "red",
-    (23, 190, 207), #   "cyan",
-    (148, 103, 189), #   "magenta",
-    (255, 127, 14), #   "yellow",
-]
+
+
+
+# Convert the vivid colors to HSV
+vivid_colors = px.colors.qualitative.Vivid
+PLOTLY_COLORS = [mcolors.rgb_to_hsv(np.array(tuple(map(int, color[4:-1].split(', '))) / np.float32(255))) for color in vivid_colors]
+
 
 MIN_POINTS = 100
 MAX_POINTS = 1000
@@ -55,43 +56,20 @@ st.sidebar.markdown("""
 - The ACF and PACF plots show the correlation structure of time series data.
 - Different graph types can be selected from the dropdown menu.
 - Noise can be added to the selected graph type using the sliders.
-
-### Settings
-
-- **Number of Points:** Turn this down for faster performance.
-- **Number of Lags:** Control how wide the ACF and PACF graphs get.
-- **Noise Intensity:** Tweak the size of each noise section.
-- **Noise Count:** Control the total number of noise sections.
-- **Noise Duration:** Set to 1 for individual noise sections, or crank it up for blocky noise sections.
-- **Noise Variability:** Zero means flat noise sections, otherwise they get jumpy.
-
-### Available Graph Types:
-
-- **White Noise**
-- **Random Walk**
-- **Linear**
-- **Quadratic**
-- **Sinusoidal**
-- **Linear + Sinusoidal**
-- **Exponential**
-- **Logistic**
-- **Gaussian**
-
 """)
 
 
 
 # Defines the functions
 
-def desaturate_color(color, desaturation_factor):
-    """Converts an RGB color to an HLS color and desaturates it by the specified factor.
-    Returns the desaturated color as an RGB tuple.
-    """
-    r, g, b = color
-    h, l, s = colorsys.rgb_to_hls(r, g, b)
-    s = max(0, s - desaturation_factor)
-    r, g, b = colorsys.hls_to_rgb(h, l, s)
-    return int(r), int(g), int(b)
+def desaturate_and_transparent(color, desaturation:float, transparency:float):
+    color_copy = color.copy()
+    color_copy[1] = max(0,color_copy[1]*(1-desaturation))
+    color_copy[2] = max(0,color_copy[2]*(1-0.6*desaturation))
+    rgb = mcolors.hsv_to_rgb(color_copy)*255
+    # Return the color in the format accepted by Plotly's rgba() function
+    rgba = np.append(rgb, transparency)
+    return "rgba({}, {}, {}, {})".format(int(rgba[0]), int(rgba[1]), int(rgba[2]), rgba[3])
 
 
 @st.cache_data
@@ -116,24 +94,12 @@ def add_noise(data, n_points, noise_intensity, noise_count, noise_duration, nois
     return data_with_noise
 
 def create_figure(title, trace1, trace2):
-    """Creates a plotly figure with two traces.
-    title: title of the plot
-    trace1: first trace to add to the figure
-    trace2: second trace to add to the figure
-    Returns the plotly figure.
-    """
     fig = go.Figure()
     fig.add_trace(trace2)
     fig.add_trace(trace1)
-    fig.update_layout(
-        title=f"{title}",
-        height=400,
-        showlegend=True,
-        hovermode='x',
-        legend=dict(orientation='h', y=-0.2),
-        bargroupgap=0
-    )
+    fig.update_layout( title=f"{title}", height=400, showlegend=True, hovermode='x', legend=dict(orientation='h', y=-0.2), bargroupgap=0 )
     return fig
+
 
 def plot_default(graphs, title, nlags, color):
     """Creates a plot with the time default OR ACF OR PACF time series data and the noisy time series data.
@@ -142,23 +108,24 @@ def plot_default(graphs, title, nlags, color):
     color: color to use for the plot
     Returns the plotly figure.
     """
-    trace1 = go.Scatter(x=graphs.index, y=graphs[title], name=f"{title}", line=dict(color=f"rgb{desaturate_color(color, 0.5)}"))
-    trace2 = go.Scatter(x=graphs_noised.index, y=graphs_noised[title], name=f"{title} with Noise", line=dict(color=f"rgb{color}"))
+    trace1 = go.Scatter(x=graphs.index, y=graphs[title], name=f"{title}", line=dict(color=desaturate_and_transparent(color=color, desaturation=0, transparency=0.8)))
+    trace2 = go.Scatter(x = graphs_noised.index, y = graphs_noised[title], name = f"{title} with Noise", line=dict(color=desaturate_and_transparent(color=color, desaturation=.64, transparency=0.8)))
     return create_figure(title, trace1, trace2)
-
+    
 def plot_ACF(graphs, title, nlags, color):
     acf_values = acf(graphs[title], nlags=nlags)
     acf_values_noise = acf(graphs_noised[title], nlags=nlags)
-    trace2 = go.Bar(x=list(range(len(acf_values_noise))), y=acf_values_noise, name=f"{title} ACF with Noise", marker=dict(color=f"rgb{color}"))
-    trace1 = go.Bar(x=list(range(len(acf_values))), y=acf_values, name=f"{title} ACF", marker=dict(color=f"rgb{desaturate_color(color, 0.5)}"))
+    trace1 = go.Bar(x=list(range(len(acf_values))), y=acf_values, name=f"{title} ACF", marker=dict(color=desaturate_and_transparent(color=color, desaturation=0, transparency=0.8)))
+    trace2 = go.Bar(x=list(range(len(acf_values_noise))), y=acf_values_noise, name=f"{title} ACF with Noise", marker=dict(color=desaturate_and_transparent(color=color, desaturation=0.67, transparency=0.8)))
     return create_figure(f"{title} ACF", trace1, trace2)
 
 def plot_PACF(graphs, title, nlags, color):
     pacf_values = pacf(graphs[title], nlags=nlags)
     pacf_values_noise = pacf(graphs_noised[title], nlags=nlags)
-    trace2 = go.Bar(x=list(range(len(pacf_values_noise))), y=pacf_values_noise, name=f"{title} PACF with Noise", marker=dict(color=f"rgb{color}"))
-    trace1 = go.Bar(x=list(range(len(pacf_values))), y=pacf_values, name=f"{title} PACF", marker=dict(color=f"rgb{desaturate_color(color, 0.5)}"))
+    trace1 = go.Bar(x=list(range(len(pacf_values))), y=pacf_values, name=f"{title} PACF", marker=dict(color=desaturate_and_transparent(color=color, desaturation=0, transparency=0.8)))
+    trace2 = go.Bar(x=list(range(len(pacf_values_noise))), y=pacf_values_noise, name=f"{title} PACF with Noise", marker=dict(color=desaturate_and_transparent(color=color, desaturation=0.7, transparency=0.8)))
     return create_figure(f"{title} PACF", trace1, trace2)
+
 
 
 # Sets up the Sliders and Dropdown Menu
@@ -169,23 +136,29 @@ if 'nlags' not in st.session_state:
     st.session_state['nlags'] = DEFAULT_LAGS
 
 def update_nlags():
-    if st.session_state.nlags > (st.session_state.n_points - 1) // 2:
-        st.session_state.nlags = (st.session_state.n_points - 1) // 2
+    if st.session_state.nlags > (st.session_state.n_points - 3) // 2:
+        st.session_state.nlags = (st.session_state.n_points - 3) // 2
 
 
-n_points = st.slider('Number of points', min_value=MIN_POINTS, max_value=MAX_POINTS,
-                     value=DEFAULT_POINTS, key="n_points", on_change=update_nlags)
-nlags = st.slider('Number of lags', min_value=MIN_LAGS, max_value=(n_points - 1) // 2,
-                  value=st.session_state.get('nlags', DEFAULT_LAGS), key="nlags")
 
-noise_intensity = st.slider('Noise Intensity', min_value=MIN_NOISE_INTENSITY,
-                            max_value=MAX_NOISE_INTENSITY, value=DEFAULT_NOISE_INTENSITY, key="noise_intensity", step=0.01)
-noise_count = st.slider('Noise Count', min_value=MIN_NOISE_COUNT,
-                        max_value=MAX_NOISE_COUNT, value=DEFAULT_NOISE_COUNT, key="noise_count")
-noise_duration = st.slider(
-    'Noise Duration', min_value=MIN_NOISE_DURATION, max_value=MAX_NOISE_DURATION, value=DEFAULT_NOISE_DURATION, key="noise_duration")
-noise_variability = st.slider('Noise Variability', min_value=MIN_NOISE_VARIABILITY,
-                              max_value=MAX_NOISE_VARIABILITY, value=DEFAULT_NOISE_VARIABILITY, key="noise_variability", step=0.01)
+st.sidebar.header('Settings')
+n_points = st.sidebar.slider('Number of points', min_value=MIN_POINTS, max_value=MAX_POINTS, value=DEFAULT_POINTS, key="n_points", on_change=update_nlags)
+nlags = st.sidebar.slider('Number of lags', min_value=MIN_LAGS, max_value=(n_points - 1) // 2, value=st.session_state.get('nlags', DEFAULT_LAGS), key="nlags")
+noise_intensity = st.sidebar.slider('Noise Intensity', min_value=MIN_NOISE_INTENSITY, max_value=MAX_NOISE_INTENSITY, value=DEFAULT_NOISE_INTENSITY, key="noise_intensity", step=0.01)
+noise_count = st.sidebar.slider('Noise Count', min_value=MIN_NOISE_COUNT, max_value=MAX_NOISE_COUNT, value=DEFAULT_NOISE_COUNT, key="noise_count")
+noise_duration = st.sidebar.slider('Noise Duration', min_value=MIN_NOISE_DURATION, max_value=MAX_NOISE_DURATION, value=DEFAULT_NOISE_DURATION, key="noise_duration")
+noise_variability = st.sidebar.slider('Noise Variability', min_value=MIN_NOISE_VARIABILITY, max_value=MAX_NOISE_VARIABILITY, value=DEFAULT_NOISE_VARIABILITY, key="noise_variability", step=0.01)
+
+st.sidebar.markdown("""
+### Settings
+
+- **Number of Points:** Turn this down for faster performance.
+- **Number of Lags:** Control how wide the ACF and PACF graphs get.
+- **Noise Intensity:** Tweak the size of each noise section.
+- **Noise Count:** Control the total number of noise sections.
+- **Noise Duration:** Set to 1 for individual noise sections, or crank it up for blocky noise sections.
+- **Noise Variability:** Zero means flat noise sections, otherwise they get jumpy.
+""")
 
 x = np.linspace(0, 10, n_points)
 graphs_dict = {
@@ -196,14 +169,16 @@ graphs_dict = {
     "Sinusoidal": np.sin(x),
     "Linear + Sinusoidal": (2/3) * (x + np.sin(x)),
     "Exponential": (1/10000) * np.exp(x),
-    "Logistic": 1 / (1 + np.exp(-x)),
-    "Gaussian": np.exp(-(x - 5)**2 / 2),
+    "Logistic": 5 / (1 + np.exp(-(x-5))),
+    "Gaussian": np.exp(-(x - 3)**2 / 2),
 }
 
-graphs_dict_sel = st.multiselect('Select data pattern to plot (click):', list(
-    graphs_dict.keys()), default=['White Noise', 'Random Walk'])
-graphs_dict_selected = {key: value for key, value in graphs_dict.items() if key in graphs_dict_sel}
-
+st.sidebar.header('Available Graph Types:')
+graphs_dict_selected = {}
+for key, value in graphs_dict.items():
+    is_selected = st.sidebar.checkbox(key, value=key in ['White Noise', 'Random Walk'])
+    if is_selected:
+        graphs_dict_selected[key] = value
 
 # Applies noise only to the selected series
 
@@ -228,3 +203,16 @@ for index, key in enumerate(graphs.keys()):
     with col3:
         # st.write(key)
         st.plotly_chart(plot_PACF(graphs, key, nlags, color), use_container_width=True)
+
+
+
+
+
+
+
+
+# Next TODOs
+# Next Steps    AR  MA     Moving average versions,      manually input arma parameters      AMIRA grid
+#  add 2nd noise round on same grap
+# plugin estimator
+# seasonality explorer    with a vertical hairline covering the entire vertical span
